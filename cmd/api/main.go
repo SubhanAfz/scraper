@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"github.com/SubhanAfz/scraper/pkg/browser"
@@ -18,7 +20,7 @@ func main() {
 
 	defer BrowserService.Close()
 
-	content, err := BrowserService.GetPage("https://www.reddit.com/r/LocalLLaMA/", 1500*time.Millisecond)
+	content, err := BrowserService.GetPage("https://www.google.com", 1500*time.Millisecond)
 	if err != nil {
 		panic(err)
 	}
@@ -29,4 +31,14 @@ func main() {
 	}
 
 	fmt.Println(mdContent)
+
+	screenshot, err := BrowserService.ScreenShot()
+	if err != nil {
+		panic(err)
+	}
+
+	if err := os.WriteFile("fullScreenshot.png", screenshot, 0o644); err != nil {
+		log.Fatal(err)
+	}
+
 }
