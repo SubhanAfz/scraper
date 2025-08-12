@@ -60,21 +60,27 @@ func (c *Chrome) ScreenShot() ([]byte, error) {
 	return buf, nil
 }
 
-func (c *Chrome) GetPage(url string, waitTime time.Duration) (string, error) {
+func (c *Chrome) GetPage(url string, waitTime time.Duration) (Page, error) {
 	var content string
+	var title string
 
 	err := chromedp.Run(c.ctx,
 		bypass_webdriver_detection(),
 		chromedp.Navigate(url),
 		chromedp.Sleep(waitTime),
 		get_visible_html(&content),
+		get_title(&title),
 	)
 
 	if err != nil {
-		return "", err
+		return Page{}, err
 	}
 
-	return content, nil
+	return Page{
+		Title:   title,
+		Content: content,
+		URL:     url,
+	}, nil
 }
 
 func bypass_webdriver_detection() chromedp.ActionFunc {
@@ -129,4 +135,7 @@ func get_visible_html(visibleHTML *string) chromedp.Action {
         }
         return getVisibleHtml();
     })()`, &visibleHTML)
+}
+func get_title(title *string) chromedp.Action {
+	return chromedp.Evaluate(`document.title`, title)
 }

@@ -1,5 +1,9 @@
 package conversion
 
+import (
+	"github.com/SubhanAfz/scraper/pkg/browser"
+)
+
 type ConversionService interface {
-	Convert(htmlContent string) (string, error) // convert html to whatever format, depending on service.
+	Convert(page browser.Page) (string, error) // convert content to whatever format, depending on service.
 }

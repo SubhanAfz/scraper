@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"os"
 	"time"
 
 	"github.com/SubhanAfz/scraper/pkg/browser"
@@ -13,6 +11,7 @@ import (
 func main() {
 	BrowserService, err := browser.NewChrome()
 	MarkdownService := conversion.NewMarkdownService()
+	Base64RemovalService := conversion.NewBase64RemovalService()
 
 	if err != nil {
 		panic(err)
@@ -20,25 +19,20 @@ func main() {
 
 	defer BrowserService.Close()
 
-	content, err := BrowserService.GetPage("https://www.google.com", 1500*time.Millisecond)
+	page, err := BrowserService.GetPage("https://roblox.com", 500*time.Millisecond)
 	if err != nil {
 		panic(err)
 	}
 
-	mdContent, err := MarkdownService.Convert(content)
+	mdPage, err := MarkdownService.Convert(page)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(mdContent)
-
-	screenshot, err := BrowserService.ScreenShot()
+	base64Page, err := Base64RemovalService.Convert(mdPage)
 	if err != nil {
 		panic(err)
 	}
 
-	if err := os.WriteFile("fullScreenshot.png", screenshot, 0o644); err != nil {
-		log.Fatal(err)
-	}
-
+	fmt.Printf("Title: %s\n\nMarkdown Content:\n %s", page.Title, base64Page.Content)
 }
