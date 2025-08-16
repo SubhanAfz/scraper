@@ -14,15 +14,9 @@ type Chrome struct {
 }
 
 func NewChrome() (*Chrome, error) {
-
-	extensions_path := "extensions/autoconsent"
-
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", "new"),
 		chromedp.UserAgent("'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'"),
-		chromedp.Flag("disable-extensions", false),
-		chromedp.Flag("disable-extensions-except", extensions_path),
-		chromedp.Flag("load-extension", extensions_path),
 	)
 
 	allocatorCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
@@ -46,28 +40,37 @@ func (c *Chrome) Close() {
 	c.cancel()
 }
 
-func (c *Chrome) ScreenShot() ([]byte, error) {
+func (c *Chrome) ScreenShot(req GetScreenShotRequest) (GetScreenShotResponse, error) {
 	var buf []byte
 
+	wait := time.Duration(req.WaitTime) * time.Millisecond
+
 	err := chromedp.Run(c.ctx,
+		bypass_webdriver_detection(),
+		chromedp.Navigate(req.URL),
+		chromedp.Sleep(wait),
 		chromedp.FullScreenshot(&buf, 90),
 	)
 
 	if err != nil {
-		return nil, err
+		return GetScreenShotResponse{}, err
 	}
 
-	return buf, nil
+	return GetScreenShotResponse{
+		Image: buf,
+	}, nil
 }
 
-func (c *Chrome) GetPage(url string, waitTime time.Duration) (Page, error) {
+func (c *Chrome) GetPage(req GetPage) (Page, error) {
 	var content string
 	var title string
 
+	wait := time.Duration(req.WaitTime) * time.Millisecond
+
 	err := chromedp.Run(c.ctx,
 		bypass_webdriver_detection(),
-		chromedp.Navigate(url),
-		chromedp.Sleep(waitTime),
+		chromedp.Navigate(req.URL),
+		chromedp.Sleep(wait),
 		get_visible_html(&content),
 		get_title(&title),
 	)
@@ -79,7 +82,7 @@ func (c *Chrome) GetPage(url string, waitTime time.Duration) (Page, error) {
 	return Page{
 		Title:   title,
 		Content: content,
-		URL:     url,
+		URL:     req.URL,
 	}, nil
 }
 

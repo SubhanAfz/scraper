@@ -8,11 +8,16 @@ import (
 	"github.com/JohannesKaufmann/html-to-markdown/v2/plugin/base"
 	"github.com/JohannesKaufmann/html-to-markdown/v2/plugin/commonmark"
 	"github.com/SubhanAfz/scraper/pkg/browser"
+	"github.com/SubhanAfz/scraper/pkg/utils"
 	"golang.org/x/net/html"
 )
 
 type MarkdownService struct {
 	md *htmltomarkdown.Converter
+}
+
+func init() {
+	Register("markdown", NewMarkdownService())
 }
 
 func NewMarkdownService() *MarkdownService {
@@ -37,6 +42,9 @@ func (mdservice *MarkdownService) Convert(page browser.Page) (browser.Page, erro
 	if err != nil {
 		return browser.Page{}, err
 	}
+
+	mdContent = utils.RemoveBase64Images(mdContent)
+
 	page.Content = mdContent
 	return page, nil
 }

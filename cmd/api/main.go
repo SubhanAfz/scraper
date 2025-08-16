@@ -2,37 +2,26 @@ package main
 
 import (
 	"fmt"
-	"time"
+	"net/http"
 
 	"github.com/SubhanAfz/scraper/pkg/browser"
-	"github.com/SubhanAfz/scraper/pkg/conversion"
+	"github.com/SubhanAfz/scraper/pkg/server"
 )
 
 func main() {
-	BrowserService, err := browser.NewChrome()
-	MarkdownService := conversion.NewMarkdownService()
-	Base64RemovalService := conversion.NewBase64RemovalService()
-
+	ChromeService, err := browser.NewChrome()
 	if err != nil {
 		panic(err)
 	}
+	defer ChromeService.Close()
 
-	defer BrowserService.Close()
-
-	page, err := BrowserService.GetPage("https://roblox.com", 500*time.Millisecond)
-	if err != nil {
-		panic(err)
+	server := &server.Server{
+		BrowserService: ChromeService,
 	}
 
-	mdPage, err := MarkdownService.Convert(page)
-	if err != nil {
-		panic(err)
-	}
-
-	base64Page, err := Base64RemovalService.Convert(mdPage)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("Title: %s\n\nMarkdown Content:\n %s", page.Title, base64Page.Content)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /get_page", server.GetPageHandler)
+	mux.HandleFunc("/screenshot", server.ScreenShotHandler)
+	fmt.Println("Server running on port 8080")
+	http.ListenAndServe(":8080", mux)
 }
