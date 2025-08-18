@@ -20,8 +20,8 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /get_page", server.GetPageHandler)
-	mux.HandleFunc("/screenshot", server.ScreenShotHandler)
+	mux.HandleFunc("GET /get_page", server.GetPageHandler)
+	mux.HandleFunc("GET /screenshot", server.ScreenShotHandler)
 	fmt.Println("Server running on port 8080")
 	http.ListenAndServe(":8080", mux)
 }

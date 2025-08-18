@@ -2,8 +2,11 @@ package browser
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
+	"github.com/SubhanAfz/scraper/pkg/autoconsent"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
@@ -15,7 +18,7 @@ type Chrome struct {
 
 func NewChrome() (*Chrome, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", "new"),
+		chromedp.Flag("headless", false),
 		chromedp.UserAgent("'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'"),
 	)
 
@@ -71,6 +74,14 @@ func (c *Chrome) GetPage(req GetPage) (Page, error) {
 		bypass_webdriver_detection(),
 		chromedp.Navigate(req.URL),
 		chromedp.Sleep(wait),
+	)
+	if err != nil {
+		return Page{}, err
+	}
+	rule := get_right_rule(c.ctx, addTrailingSlash(req.URL))
+	fmt.Printf("Detected rule: %+v\n", rule)
+	opt_out(c.ctx, rule)
+	err = chromedp.Run(c.ctx,
 		get_visible_html(&content),
 		get_title(&title),
 	)
@@ -141,4 +152,114 @@ func get_visible_html(visibleHTML *string) chromedp.Action {
 }
 func get_title(title *string) chromedp.Action {
 	return chromedp.Evaluate(`document.title`, title)
+}
+
+func get_right_rule(ctx context.Context, url string) autoconsent.AutoConsentRule {
+	for _, rule := range autoconsent.Rules.Rules {
+		var rightRule bool = true
+		if len(rule.DetectCMP) == 0 {
+			rightRule = false
+		}
+		if rule.RunContext.UrlPattern != "" && !rule.RunContext.URLMatches(url) {
+			rightRule = false
+		}
+		if rule.RunContext.UrlPattern != "" && rightRule {
+			fmt.Println(rule.RunContext.UrlPattern)
+		}
+		executed_right := ExecuteActions(ctx, rule.DetectCMP, ModeDetect)
+		if !executed_right {
+			rightRule = false
+		}
+		if rightRule {
+			return rule
+		}
+	}
+	return autoconsent.AutoConsentRule{}
+}
+
+func opt_out(ctx context.Context, rule autoconsent.AutoConsentRule) error {
+	ExecuteActions(ctx, rule.OptOut, ModeExecute)
+	return nil
+}
+
+type ActionMode int
+
+const (
+	ModeDetect ActionMode = iota
+	ModeExecute
+)
+
+func ExecuteActions(ctx context.Context, actions autoconsent.ActionList, mode ActionMode) bool {
+	var executed_right = true
+	for _, action := range actions {
+		switch a := action.(type) {
+		case autoconsent.ClickAction:
+			if mode == ModeExecute {
+				if err := a.Click.Click(ctx); err != nil {
+					fmt.Printf("Error executing click action: %v\n", err)
+				}
+			}
+		case autoconsent.WaitForThenClickAction:
+			if mode == ModeExecute {
+				a.WaitForClick(ctx)
+			}
+		case autoconsent.ExistsAction:
+			if mode == ModeDetect {
+				if exists, err := a.Exists.ElementExists(ctx); err != nil || !exists {
+					fmt.Printf("Error checking existence for exists action: %v\n", err)
+					executed_right = false
+					continue
+				}
+			}
+		case autoconsent.VisibleAction:
+			if mode == ModeDetect {
+				if visible, err := a.Visible.ElementExists(ctx); err != nil || !visible {
+					fmt.Printf("Error checking visibility for visible action: %v\n", err)
+					executed_right = false
+					continue
+				}
+			}
+		case autoconsent.WaitForAction:
+			if mode == ModeDetect {
+				if exists := a.Wait(ctx); !exists {
+					executed_right = false
+					continue
+				}
+			}
+		case autoconsent.WaitForVisibleAction:
+			if mode == ModeDetect {
+				if visible := a.Wait(ctx); !visible {
+					executed_right = false
+					continue
+				}
+			}
+		case autoconsent.IfThenElseAction:
+			if mode == ModeExecute {
+				// Create a new ActionList containing the single 'if' action
+				fmt.Println(a.If.ActionType())
+				ifActions := autoconsent.ActionList{a.If}
+				if ExecuteActions(ctx, ifActions, ModeDetect) {
+					fmt.Println("Condition met for IfThenElseAction")
+					// If condition is true, execute 'then' actions
+					ExecuteActions(ctx, a.Then, ModeExecute)
+				} else {
+					// If condition is false, execute 'else' actions (if any)
+					fmt.Println("Condition not met for IfThenElseAction")
+					ExecuteActions(ctx, a.Else, ModeExecute)
+				}
+			}
+		case autoconsent.UnconditionalWaitAction:
+			a.Wait(ctx)
+		default:
+			fmt.Printf("Unsupported action type detected: %T\n", a)
+		}
+	}
+	return executed_right
+}
+
+func addTrailingSlash(url string) string {
+	if !strings.HasSuffix(url, "/") {
+		url += "/"
+	}
+	return url
 }
