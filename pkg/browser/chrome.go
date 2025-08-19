@@ -69,16 +69,18 @@ func (c *Chrome) GetPage(req GetPage) (Page, error) {
 	var title string
 
 	wait := time.Duration(req.WaitTime) * time.Millisecond
+	var url string
 
 	err := chromedp.Run(c.ctx,
 		bypass_webdriver_detection(),
 		chromedp.Navigate(req.URL),
 		chromedp.Sleep(wait),
+		chromedp.Location(&url),
 	)
 	if err != nil {
 		return Page{}, err
 	}
-	rule := get_right_rule(c.ctx, addTrailingSlash(req.URL))
+	rule := get_right_rule(c.ctx, url)
 	fmt.Printf("Detected rule: %+v\n", rule)
 	opt_out(c.ctx, rule)
 	err = chromedp.Run(c.ctx,
@@ -250,6 +252,10 @@ func ExecuteActions(ctx context.Context, actions autoconsent.ActionList, mode Ac
 			}
 		case autoconsent.UnconditionalWaitAction:
 			a.Wait(ctx)
+		case autoconsent.EvalAction:
+			if mode == ModeExecute {
+				a.Evaluate(ctx)
+			}
 		default:
 			fmt.Printf("Unsupported action type detected: %T\n", a)
 		}

@@ -339,6 +339,10 @@ func (e EvalAction) ActionType() string {
 	return "eval"
 }
 
+func (e EvalAction) Evaluate(ctx context.Context) error {
+	return chromedp.Run(ctx, chromedp.Evaluate("(()=>{"+JSEvals[e.Eval]+"})()", nil))
+}
+
 type IfThenElseAction struct {
 	If   Action     `json:"if"`
 	Then ActionList `json:"then"`
