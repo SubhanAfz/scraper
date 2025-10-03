@@ -1,4 +1,4 @@
-#Scraper
+# Scraper
 
 This is a go based web scraper service, which ouputs clean markdown content of the webpage and screenshots, through an easy to use REST API.
 
