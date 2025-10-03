@@ -73,14 +73,72 @@ func (e *ElementSelector) ElementExists(ctx context.Context) (bool, error) {
 func (e *ElementSelector) Click(ctx context.Context) error {
 	switch s := e.Element.(type) {
 	case string:
+		fmt.Println("Clicking selector:", s)
 		if strings.HasPrefix(s, "xpath/") {
-			return chromedp.Run(ctx, chromedp.Click(s[6:], chromedp.BySearch))
+			return clickElementRobust(ctx, s[6:], true)
 		}
-		return chromedp.Run(ctx, chromedp.Click(s))
+		return clickElementRobust(ctx, s, false)
 	case []string:
 		return clickComplex(ctx, s)
 	default:
 		return fmt.Errorf("unsupported selector type for click: %T", e.Element)
+	}
+}
+
+func clickElementRobust(ctx context.Context, selector string, isXPath bool) error {
+	// First, try to ensure element is visible and clickable
+	var tasks []chromedp.Action
+
+	if isXPath {
+		// For XPath, first scroll element into view
+		tasks = append(tasks,
+			chromedp.ScrollIntoView(selector, chromedp.BySearch),
+			chromedp.Sleep(100*time.Millisecond),
+		)
+
+		// Strategy 2: JavaScript click via XPath
+		js := fmt.Sprintf(`
+			(function() {
+				const element = document.evaluate(%s, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+				if (element) {
+					element.scrollIntoView({behavior: 'instant', block: 'center'});
+					element.click();
+					return true;
+				}
+				return false;
+			})()`, jsonEscape(selector))
+
+		var success bool
+		err := chromedp.Run(ctx, chromedp.Evaluate(js, &success))
+		if err == nil && success {
+			return nil
+		}
+
+		return fmt.Errorf("failed to click XPath element: %v", err)
+	} else {
+		// For CSS selectors, scroll into view first
+		tasks = append(tasks,
+			chromedp.ScrollIntoView(selector),
+			chromedp.Sleep(100*time.Millisecond),
+		)
+
+		js := fmt.Sprintf(`
+			(function() {
+				const element = document.querySelector(%s);
+				if (element) {
+					element.scrollIntoView({behavior: 'instant', block: 'center'});
+					element.click();
+					return true;
+				}
+				return false;
+			})()`, jsonEscape(selector))
+
+		var success bool
+		err := chromedp.Run(ctx, chromedp.Evaluate(js, &success))
+		if err == nil && success {
+			return nil
+		}
+		return fmt.Errorf("failed to click CSS element: %v", err)
 	}
 }
 
@@ -90,6 +148,7 @@ func clickComplex(ctx context.Context, selectors []string) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("Clicking complex selector:", string(selectorsJSON))
 
 	js := fmt.Sprintf(`
         (function() {
@@ -114,6 +173,8 @@ func clickComplex(ctx context.Context, selectors []string) error {
                     
                     // If this is the last selector, click the element
                     if (i === selectors.length - 1) {
+                        // Scroll into view and click
+                        element.scrollIntoView({behavior: 'instant', block: 'center'});
                         element.click();
                         return true;
                     }
@@ -308,12 +369,12 @@ func (w WaitForThenClickAction) WaitForClick(ctx context.Context) error {
 	for time.Now().Before(deadline) {
 		exists, err := w.WaitFor.ElementExists(ctx)
 		if err == nil && exists {
-			// Element found, click it and return immediately
+			// Add a small delay to ensure element is ready for interaction
+			chromedp.Run(ctx, chromedp.Sleep(200*time.Millisecond))
 			return w.WaitFor.Click(ctx)
 		}
 		chromedp.Run(ctx, chromedp.Sleep(interval))
 	}
-	// Timeout reached without finding element
 	return fmt.Errorf("timeout waiting for element to appear")
 }
 

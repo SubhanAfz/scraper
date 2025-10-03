@@ -46,17 +46,19 @@ func (c *Chrome) ScreenShot(req GetScreenShotRequest) (GetScreenShotResponse, er
 	var buf []byte
 
 	wait := time.Duration(req.WaitTime) * time.Millisecond
+	var url string
 
 	err := chromedp.Run(c.ctx,
 		bypass_webdriver_detection(),
 		chromedp.Navigate(req.URL),
 		chromedp.Sleep(wait),
+		chromedp.Location(&url),
 	)
 
 	if err != nil {
 		return GetScreenShotResponse{}, err
 	}
-	rule := get_right_rule(c.ctx, req.URL)
+	rule := get_right_rule(c.ctx, url)
 	fmt.Printf("Detected rule: %+v\n", rule)
 	opt_out(c.ctx, rule)
 	fmt.Println("Opt-out actions executed")
@@ -209,7 +211,9 @@ func ExecuteActions(ctx context.Context, actions autoconsent.ActionList, mode Ac
 			}
 		case autoconsent.WaitForThenClickAction:
 			if mode == ModeExecute {
-				a.WaitForClick(ctx)
+				if err := a.WaitForClick(ctx); err != nil {
+					fmt.Printf("Error waiting for then click action: %v\n", err)
+				}
 			}
 		case autoconsent.ExistsAction:
 			if mode == ModeDetect {
