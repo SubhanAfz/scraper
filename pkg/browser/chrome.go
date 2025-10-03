@@ -51,12 +51,18 @@ func (c *Chrome) ScreenShot(req GetScreenShotRequest) (GetScreenShotResponse, er
 		bypass_webdriver_detection(),
 		chromedp.Navigate(req.URL),
 		chromedp.Sleep(wait),
-		chromedp.FullScreenshot(&buf, 90),
 	)
 
 	if err != nil {
 		return GetScreenShotResponse{}, err
 	}
+	rule := get_right_rule(c.ctx, req.URL)
+	fmt.Printf("Detected rule: %+v\n", rule)
+	opt_out(c.ctx, rule)
+	fmt.Println("Opt-out actions executed")
+	err = chromedp.Run(c.ctx,
+		chromedp.FullScreenshot(&buf, 90),
+	)
 
 	return GetScreenShotResponse{
 		Image: buf,

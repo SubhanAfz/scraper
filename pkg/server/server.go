@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/SubhanAfz/scraper/pkg/browser"
 	"github.com/SubhanAfz/scraper/pkg/conversion"
@@ -23,33 +24,48 @@ func writeJsonError(w http.ResponseWriter, status int, err error) {
 	json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
 }
 
-type GetPageRequest struct {
-	browser.GetPage `json:"get_page"`
-	Format          string `json:"format"` // format to convert the page content to
-}
-
 func (s *Server) GetPageHandler(w http.ResponseWriter, r *http.Request) {
-	var req GetPageRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJsonError(w, http.StatusBadRequest, err)
+	// Parse query parameters
+	url := r.URL.Query().Get("url")
+	if url == "" {
+		writeJsonError(w, http.StatusBadRequest, fmt.Errorf("url parameter is required"))
 		return
 	}
 
-	page, err := s.BrowserService.GetPage(req.GetPage)
+	waitTimeStr := r.URL.Query().Get("wait_time")
+	var waitTime uint64 = 1000 // default 1 second
+	if waitTimeStr != "" {
+		if parsedWaitTime, err := strconv.ParseUint(waitTimeStr, 10, 64); err != nil {
+			writeJsonError(w, http.StatusBadRequest, fmt.Errorf("invalid wait_time parameter: %s", err.Error()))
+			return
+		} else {
+			waitTime = parsedWaitTime
+		}
+	}
+
+	format := r.URL.Query().Get("format")
+
+	// Create the request
+	pageReq := browser.GetPage{
+		URL:      url,
+		WaitTime: waitTime,
+	}
+
+	page, err := s.BrowserService.GetPage(pageReq)
 	if err != nil {
 		writeJsonError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	if req.Format != "" {
-		if conversionService, exists := conversion.GetService(req.Format); exists {
+	if format != "" {
+		if conversionService, exists := conversion.GetService(format); exists {
 			page, err = conversionService.Convert(page)
 			if err != nil {
 				writeJsonError(w, http.StatusInternalServerError, err)
 				return
 			}
 		} else {
-			writeJsonError(w, http.StatusBadRequest, fmt.Errorf("unsupported format: %s", req.Format))
+			writeJsonError(w, http.StatusBadRequest, fmt.Errorf("unsupported format: %s", format))
 			return
 		}
 	}
@@ -63,11 +79,28 @@ func (s *Server) GetPageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ScreenShotHandler(w http.ResponseWriter, r *http.Request) {
-	var req browser.GetScreenShotRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJsonError(w, http.StatusBadRequest, err)
+	// Parse query parameters
+	url := r.URL.Query().Get("url")
+	if url == "" {
+		writeJsonError(w, http.StatusBadRequest, fmt.Errorf("url parameter is required"))
 		return
+	}
+
+	waitTimeStr := r.URL.Query().Get("wait_time")
+	var waitTime uint64 = 1000 // default 1 second
+	if waitTimeStr != "" {
+		if parsedWaitTime, err := strconv.ParseUint(waitTimeStr, 10, 64); err != nil {
+			writeJsonError(w, http.StatusBadRequest, fmt.Errorf("invalid wait_time parameter: %s", err.Error()))
+			return
+		} else {
+			waitTime = parsedWaitTime
+		}
+	}
+
+	// Create the request
+	req := browser.GetScreenShotRequest{
+		URL:      url,
+		WaitTime: waitTime,
 	}
 
 	resp, err := s.BrowserService.ScreenShot(req)
