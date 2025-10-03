@@ -302,16 +302,19 @@ func (w WaitForThenClickAction) ActionType() string {
 	return "waitForThenClick"
 }
 
-func (w WaitForThenClickAction) WaitForClick(ctx context.Context) {
+func (w WaitForThenClickAction) WaitForClick(ctx context.Context) error {
 	interval := 100 * time.Millisecond
 	deadline := time.Now().Add(time.Duration(w.Timeout) * time.Millisecond)
 	for time.Now().Before(deadline) {
 		exists, err := w.WaitFor.ElementExists(ctx)
 		if err == nil && exists {
-			w.WaitFor.Click(ctx)
+			// Element found, click it and return immediately
+			return w.WaitFor.Click(ctx)
 		}
 		chromedp.Run(ctx, chromedp.Sleep(interval))
 	}
+	// Timeout reached without finding element
+	return fmt.Errorf("timeout waiting for element to appear")
 }
 
 type HideAction struct {

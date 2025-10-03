@@ -3,7 +3,6 @@ package browser
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/SubhanAfz/scraper/pkg/autoconsent"
@@ -83,6 +82,7 @@ func (c *Chrome) GetPage(req GetPage) (Page, error) {
 	rule := get_right_rule(c.ctx, url)
 	fmt.Printf("Detected rule: %+v\n", rule)
 	opt_out(c.ctx, rule)
+	fmt.Println("Opt-out actions executed")
 	err = chromedp.Run(c.ctx,
 		get_visible_html(&content),
 		get_title(&title),
@@ -179,9 +179,8 @@ func get_right_rule(ctx context.Context, url string) autoconsent.AutoConsentRule
 	return autoconsent.AutoConsentRule{}
 }
 
-func opt_out(ctx context.Context, rule autoconsent.AutoConsentRule) error {
+func opt_out(ctx context.Context, rule autoconsent.AutoConsentRule) {
 	ExecuteActions(ctx, rule.OptOut, ModeExecute)
-	return nil
 }
 
 type ActionMode int
@@ -194,6 +193,7 @@ const (
 func ExecuteActions(ctx context.Context, actions autoconsent.ActionList, mode ActionMode) bool {
 	var executed_right = true
 	for _, action := range actions {
+		fmt.Println("Executing action:", action.ActionType())
 		switch a := action.(type) {
 		case autoconsent.ClickAction:
 			if mode == ModeExecute {
@@ -261,11 +261,4 @@ func ExecuteActions(ctx context.Context, actions autoconsent.ActionList, mode Ac
 		}
 	}
 	return executed_right
-}
-
-func addTrailingSlash(url string) string {
-	if !strings.HasSuffix(url, "/") {
-		url += "/"
-	}
-	return url
 }
