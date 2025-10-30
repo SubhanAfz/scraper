@@ -2,7 +2,7 @@
 
 This is a go based web scraper service, which ouputs clean markdown content of the webpage and screenshots, through an easy to use REST API.
 
-The project now also includes an MCP Server which returns a http event-stream object
+The project now also includes an MCP Server which launches a HTTP MCP server
 
 Scraper can automatically handle cookie consent banners (cookie consent rules from [here](https://github.com/duckduckgo/autoconsent))
 
