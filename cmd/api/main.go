@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/SubhanAfz/scraper/pkg/browser"
@@ -22,6 +21,5 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /get_page", server.GetPageHandler)
 	mux.HandleFunc("GET /screenshot", server.ScreenShotHandler)
-	fmt.Println("Server running on port 8080")
 	http.ListenAndServe(":8080", mux)
 }

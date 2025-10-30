@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/SubhanAfz/scraper/pkg/browser"
 	"github.com/SubhanAfz/scraper/pkg/conversion"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type Server struct {
@@ -111,4 +113,49 @@ func (s *Server) ScreenShotHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+type GetPageMCPRequest struct {
+	URL string `json:"url" jsonschema:"url of the page to scrape"`
+}
+
+type GetPageMCPResponse struct {
+	Title   string `json:"title" jsonschema:"title of the page"`
+	Content string `json:"content" jsonschema:"markdown content of the page"`
+	URL     string `json:"url" jsonschema:"url of the page"`
+}
+
+func (s *Server) GetPageMCPHandler(ctx context.Context, request *mcp.CallToolRequest, input GetPageMCPRequest) (*mcp.CallToolResult, GetPageMCPResponse, error) {
+
+	pageReq := browser.GetPage{
+		URL:      input.URL,
+		WaitTime: 1000,
+	}
+
+	page, err := s.BrowserService.GetPage(pageReq)
+	if err != nil {
+		return nil, GetPageMCPResponse{}, err
+	}
+
+	r := browser.Page{
+		Title:   page.Title,
+		Content: page.Content,
+		URL:     page.URL,
+	}
+
+	if conversionService, exists := conversion.GetService("markdown"); exists {
+		page, err = conversionService.Convert(r)
+		if err != nil {
+			return nil, GetPageMCPResponse{}, err
+		}
+		pageResponse := GetPageMCPResponse{
+			Title:   page.Title,
+			Content: page.Content,
+			URL:     page.URL,
+		}
+		return nil, pageResponse, nil
+	} else {
+		return nil, GetPageMCPResponse{}, fmt.Errorf("markdown conversion service not found")
+	}
+
 }

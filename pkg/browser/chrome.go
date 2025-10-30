@@ -2,7 +2,6 @@ package browser
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/SubhanAfz/scraper/pkg/autoconsent"
@@ -59,9 +58,7 @@ func (c *Chrome) ScreenShot(req GetScreenShotRequest) (GetScreenShotResponse, er
 		return GetScreenShotResponse{}, err
 	}
 	rule := get_right_rule(c.ctx, url)
-	fmt.Printf("Detected rule: %+v\n", rule)
 	opt_out(c.ctx, rule)
-	fmt.Println("Opt-out actions executed")
 	err = chromedp.Run(c.ctx,
 		chromedp.FullScreenshot(&buf, 90),
 	)
@@ -88,9 +85,7 @@ func (c *Chrome) GetPage(req GetPage) (Page, error) {
 		return Page{}, err
 	}
 	rule := get_right_rule(c.ctx, url)
-	fmt.Printf("Detected rule: %+v\n", rule)
 	opt_out(c.ctx, rule)
-	fmt.Println("Opt-out actions executed")
 	err = chromedp.Run(c.ctx,
 		get_visible_html(&content),
 		get_title(&title),
@@ -174,7 +169,6 @@ func get_right_rule(ctx context.Context, url string) autoconsent.AutoConsentRule
 			rightRule = false
 		}
 		if rule.RunContext.UrlPattern != "" && rightRule {
-			fmt.Println(rule.RunContext.UrlPattern)
 		}
 		executed_right := ExecuteActions(ctx, rule.DetectCMP, ModeDetect)
 		if !executed_right {
@@ -201,24 +195,20 @@ const (
 func ExecuteActions(ctx context.Context, actions autoconsent.ActionList, mode ActionMode) bool {
 	var executed_right = true
 	for _, action := range actions {
-		fmt.Println("Executing action:", action.ActionType())
 		switch a := action.(type) {
 		case autoconsent.ClickAction:
 			if mode == ModeExecute {
 				if err := a.Click.Click(ctx); err != nil {
-					fmt.Printf("Error executing click action: %v\n", err)
 				}
 			}
 		case autoconsent.WaitForThenClickAction:
 			if mode == ModeExecute {
 				if err := a.WaitForClick(ctx); err != nil {
-					fmt.Printf("Error waiting for then click action: %v\n", err)
 				}
 			}
 		case autoconsent.ExistsAction:
 			if mode == ModeDetect {
 				if exists, err := a.Exists.ElementExists(ctx); err != nil || !exists {
-					fmt.Printf("Error checking existence for exists action: %v\n", err)
 					executed_right = false
 					continue
 				}
@@ -226,7 +216,6 @@ func ExecuteActions(ctx context.Context, actions autoconsent.ActionList, mode Ac
 		case autoconsent.VisibleAction:
 			if mode == ModeDetect {
 				if visible, err := a.Visible.ElementExists(ctx); err != nil || !visible {
-					fmt.Printf("Error checking visibility for visible action: %v\n", err)
 					executed_right = false
 					continue
 				}
@@ -248,15 +237,12 @@ func ExecuteActions(ctx context.Context, actions autoconsent.ActionList, mode Ac
 		case autoconsent.IfThenElseAction:
 			if mode == ModeExecute {
 				// Create a new ActionList containing the single 'if' action
-				fmt.Println(a.If.ActionType())
 				ifActions := autoconsent.ActionList{a.If}
 				if ExecuteActions(ctx, ifActions, ModeDetect) {
-					fmt.Println("Condition met for IfThenElseAction")
 					// If condition is true, execute 'then' actions
 					ExecuteActions(ctx, a.Then, ModeExecute)
 				} else {
 					// If condition is false, execute 'else' actions (if any)
-					fmt.Println("Condition not met for IfThenElseAction")
 					ExecuteActions(ctx, a.Else, ModeExecute)
 				}
 			}
@@ -267,7 +253,6 @@ func ExecuteActions(ctx context.Context, actions autoconsent.ActionList, mode Ac
 				a.Evaluate(ctx)
 			}
 		default:
-			fmt.Printf("Unsupported action type detected: %T\n", a)
 		}
 	}
 	return executed_right

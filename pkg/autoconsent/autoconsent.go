@@ -73,7 +73,6 @@ func (e *ElementSelector) ElementExists(ctx context.Context) (bool, error) {
 func (e *ElementSelector) Click(ctx context.Context) error {
 	switch s := e.Element.(type) {
 	case string:
-		fmt.Println("Clicking selector:", s)
 		if strings.HasPrefix(s, "xpath/") {
 			return clickElementRobust(ctx, s[6:], true)
 		}
@@ -148,7 +147,6 @@ func clickComplex(ctx context.Context, selectors []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Clicking complex selector:", string(selectorsJSON))
 
 	js := fmt.Sprintf(`
         (function() {
