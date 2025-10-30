@@ -2,6 +2,8 @@
 
 This is a go based web scraper service, which ouputs clean markdown content of the webpage and screenshots, through an easy to use REST API.
 
+The project now also includes an MCP Server which returns a http event-stream object
+
 Scraper can automatically handle cookie consent banners (cookie consent rules from [here](https://github.com/duckduckgo/autoconsent))
 
 ## Prerequisites
@@ -25,33 +27,21 @@ go mod download
 go mod tidy
 ```
 
-### Build the Binary
+### Build the REST API Binary
 ```bash
-# Build the binary (outputs to bin/api)
-# This will automatically download dependencies if not already done
+# Build the binary (outputs to bin/)
 make build
-
-# Or build manually
-go build -o bin/api cmd/api/main.go
 ```
 
-### Run the Development Server
+### Build the MCP Server Binary
 ```bash
-# Run directly without building
-make run
-
-# Or run manually
-go run cmd/api/main.go
+make build-mcp
 ```
+###
+To run the binaries, you must include the rules.json, in the same folder as the executable.
+The built binary will be located at `bin/` and can be executed directly.
 
-### Clean Build Artifacts
-```bash
-make clean
-```
-
-The built binary will be located at `bin/api` and can be executed directly.
-
-## API Documentation
+## REST API Documentation
 
 The scraper service runs on `http://localhost:8080` by default and provides two main endpoints:
 
