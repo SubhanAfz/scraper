@@ -2,43 +2,148 @@ package browser
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/SubhanAfz/scraper/pkg/autoconsent"
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
 type Chrome struct {
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx            context.Context
+	ctxCancel      context.CancelFunc
+	allocCancel    context.CancelFunc
+	tempProfileDir string
 }
 
 func NewChrome() (*Chrome, error) {
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.UserAgent("'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'"),
-	)
+	return NewChromeWithConfig(DefaultChromeConfig())
+}
 
-	allocatorCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
+type ChromeConfig struct {
+	Headless            bool
+	DisableSandbox      bool
+	UserDataDir         string
+	ExtensionPaths      []string
+	RemoteDebuggingHost string
+	RemoteDebuggingPort int
+	RemoteAllocatorURL  string
+}
 
-	ctx, _ := chromedp.NewContext(allocatorCtx)
+func DefaultChromeConfig() ChromeConfig {
+	return ChromeConfig{
+		Headless: true,
+	}
+}
 
-	err := chromedp.Run(ctx, chromedp.Navigate("about:blank"))
+func NewChromeWithConfig(cfg ChromeConfig) (*Chrome, error) {
+	tempProfileDir := ""
+	if cfg.UserDataDir == "" && cfg.RemoteAllocatorURL == "" {
+		dir, err := os.MkdirTemp("", "scraper-profile-")
+		if err != nil {
+			return nil, err
+		}
+		tempProfileDir = dir
+		cfg.UserDataDir = dir
+	}
 
+	allocatorCtx, allocCancel := createAllocator(cfg)
+	ctx, ctxCancel := chromedp.NewContext(allocatorCtx)
+
+	startupTasks := []chromedp.Action{}
+	if cfg.Headless {
+		startupTasks = append(startupTasks, removeHeadlessUserAgent())
+	}
+	startupTasks = append(startupTasks, chromedp.Navigate("about:blank"))
+
+	err := chromedp.Run(ctx, startupTasks...)
 	if err != nil {
-		cancel()
+		ctxCancel()
+		allocCancel()
+		if tempProfileDir != "" {
+			_ = os.RemoveAll(tempProfileDir)
+		}
 		return nil, err
 	}
 
 	return &Chrome{
-		ctx:    ctx,
-		cancel: cancel,
+		ctx:            ctx,
+		ctxCancel:      ctxCancel,
+		allocCancel:    allocCancel,
+		tempProfileDir: tempProfileDir,
 	}, nil
 }
 
+func createAllocator(cfg ChromeConfig) (context.Context, context.CancelFunc) {
+	if cfg.RemoteAllocatorURL != "" {
+		return chromedp.NewRemoteAllocator(context.Background(), cfg.RemoteAllocatorURL)
+	}
+	opts := execAllocatorOptions(cfg)
+	return chromedp.NewExecAllocator(context.Background(), opts...)
+}
+
+func execAllocatorOptions(cfg ChromeConfig) []chromedp.ExecAllocatorOption {
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		// Default anti-bot-ish flags matching nodriver's Config defaults.
+		chromedp.Flag("remote-allow-origins", "*"),
+		chromedp.Flag("no-first-run", true),
+		chromedp.Flag("no-service-autorun", true),
+		chromedp.Flag("no-default-browser-check", true),
+		chromedp.Flag("homepage", "about:blank"),
+		chromedp.Flag("no-pings", true),
+		chromedp.Flag("password-store", "basic"),
+		chromedp.Flag("disable-infobars", true),
+		chromedp.Flag("disable-breakpad", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("disable-session-crashed-bubble", true),
+		chromedp.Flag("disable-search-engine-choice-screen", true),
+	)
+
+	if cfg.UserDataDir != "" {
+		opts = append(opts, chromedp.Flag("user-data-dir", cfg.UserDataDir))
+	}
+
+	features := []string{"IsolateOrigins", "site-per-process"}
+	if len(cfg.ExtensionPaths) > 0 {
+		features = append(features, "DisableLoadExtensionCommandLineSwitch")
+		opts = append(opts,
+			chromedp.Flag("disable-extensions-except", strings.Join(cfg.ExtensionPaths, ",")),
+			chromedp.Flag("load-extension", strings.Join(cfg.ExtensionPaths, ",")),
+		)
+	}
+	opts = append(opts, chromedp.Flag("disable-features", strings.Join(features, ",")))
+
+	if cfg.Headless {
+		opts = append(opts, chromedp.Flag("headless", "new"))
+	} else {
+		opts = append(opts, chromedp.Flag("headless", false))
+	}
+
+	if cfg.DisableSandbox {
+		opts = append(opts, chromedp.Flag("no-sandbox", true))
+	}
+
+	if cfg.RemoteDebuggingHost != "" {
+		opts = append(opts, chromedp.Flag("remote-debugging-host", cfg.RemoteDebuggingHost))
+	}
+	if cfg.RemoteDebuggingPort != 0 {
+		opts = append(opts, chromedp.Flag("remote-debugging-port", cfg.RemoteDebuggingPort))
+	}
+
+	return opts
+}
+
 func (c *Chrome) Close() {
-	c.cancel()
+	c.ctxCancel()
+	c.allocCancel()
+	if c.tempProfileDir != "" {
+		_ = os.RemoveAll(c.tempProfileDir)
+	}
 }
 
 func (c *Chrome) ScreenShot(req GetScreenShotRequest) (GetScreenShotResponse, error) {
@@ -111,6 +216,30 @@ func bypass_webdriver_detection() chromedp.ActionFunc {
 			return err
 		}
 		return nil
+	})
+}
+
+func removeHeadlessUserAgent() chromedp.ActionFunc {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		if err := network.Enable().Do(ctx); err != nil {
+			return err
+		}
+		resp, err := runtime.Evaluate(`navigator.userAgent`).WithReturnByValue(true).Do(ctx)
+		if err != nil {
+			return err
+		}
+		if resp.Result == nil {
+			return nil
+		}
+		var ua string
+		if err := json.Unmarshal(resp.Result.Value, &ua); err != nil {
+			return err
+		}
+		cleanedUA := strings.ReplaceAll(ua, "Headless", "")
+		if cleanedUA == ua {
+			return nil
+		}
+		return network.SetUserAgentOverride(cleanedUA).Do(ctx)
 	})
 }
 

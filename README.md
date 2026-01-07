@@ -6,6 +6,14 @@ The project now also includes an MCP Server which launches a HTTP MCP server
 
 Scraper can automatically handle cookie consent banners (cookie consent rules from [here](https://github.com/duckduckgo/autoconsent))
 
+## Anti-bot defaults (chromedp)
+
+The browser launcher ships with a few nodriver-style behaviors to reduce common automation artifacts:
+
+- Launches Chromium with a set of default flags (`--no-first-run`, `--disable-infobars`, `--disable-dev-shm-usage`, etc.).
+- Creates a temporary profile directory when one is not provided and removes it on shutdown.
+- In headless mode, removes the `Headless` token from the reported User-Agent via CDP.
+
 ## Prerequisites
 
 - Go 1.21 or higher
