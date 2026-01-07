@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/SubhanAfz/scraper/pkg/browser"
 	"github.com/SubhanAfz/scraper/pkg/server"
@@ -10,7 +11,12 @@ import (
 )
 
 func main() {
-	ChromeService, err := browser.NewChrome()
+	cfg := browser.DefaultChromeConfig()
+	if os.Getenv("HEADLESS") == "true" {
+		cfg.DisableSandbox = true
+	}
+
+	ChromeService, err := browser.NewChromeWithConfig(cfg)
 	if err != nil {
 		panic(err)
 	}
@@ -23,7 +29,14 @@ func main() {
 	handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		return server
 	}, nil)
-	if err := http.ListenAndServe("localhost:8080", handler); err != nil {
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	addr := "0.0.0.0:" + port
+	log.Printf("Starting MCP server on %s", addr)
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatal(err)
 	}
 }
