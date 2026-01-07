@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/SubhanAfz/scraper/pkg/autoconsent"
+	"github.com/chromedp/cdproto/debugger"
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
@@ -56,6 +58,9 @@ func NewChromeWithConfig(cfg ChromeConfig) (*Chrome, error) {
 	ctx, ctxCancel := chromedp.NewContext(allocatorCtx)
 
 	startupTasks := []chromedp.Action{}
+	// Always run stealth scripts at startup
+	startupTasks = append(startupTasks, bypass_webdriver_detection())
+	startupTasks = append(startupTasks, disableDebuggerDetection())
 	if cfg.Headless {
 		startupTasks = append(startupTasks, removeHeadlessUserAgent())
 	}
@@ -102,6 +107,10 @@ func execAllocatorOptions(cfg ChromeConfig) []chromedp.ExecAllocatorOption {
 		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("disable-session-crashed-bubble", true),
 		chromedp.Flag("disable-search-engine-choice-screen", true),
+		// Anti-bot detection flags
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.Flag("excludeSwitches", "enable-automation"),
+		chromedp.Flag("useAutomationExtension", false),
 	)
 
 	if cfg.UserDataDir != "" {
@@ -209,13 +218,79 @@ func (c *Chrome) GetPage(req GetPage) (Page, error) {
 
 func bypass_webdriver_detection() chromedp.ActionFunc {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
-		_, err := page.AddScriptToEvaluateOnNewDocument(`Object.defineProperty(navigator, 'webdriver', {
-    get: () => false,
-  });`).Do(ctx)
+		// Comprehensive stealth script to bypass bot detection
+		stealthScript := `
+		// Remove webdriver property completely by redefining Navigator prototype
+		const newProto = Navigator.prototype;
+		delete newProto.webdriver;
+		
+		// Also ensure navigator.webdriver returns undefined naturally
+		if (Object.getOwnPropertyDescriptor(navigator, 'webdriver')) {
+			Object.defineProperty(navigator, 'webdriver', {
+				get: () => undefined,
+				configurable: true
+			});
+		}
+		
+		// Remove CDP artifacts (cdc_ variables)
+		const cdcKeys = Object.keys(window).filter(key => /^cdc_|^__cdc_/.test(key));
+		cdcKeys.forEach(key => { try { delete window[key]; } catch(e) {} });
+		
+		// Override console methods to defeat DevTools timing detection
+		// DevTools detection measures how long console.log/table take to execute
+		// When DevTools is open, these take much longer due to rendering
+		// By making them no-ops, the timing check fails to detect DevTools
+		const originalConsole = {
+			log: console.log,
+			table: console.table,
+			clear: console.clear
+		};
+		console.log = function() { return undefined; };
+		console.table = function() { return undefined; };
+		console.clear = function() { return undefined; };
+		
+		// Block devtoolsFormatters detection
+		// Chrome calls custom formatters when displaying objects in DevTools console
+		Object.defineProperty(window, 'devtoolsFormatters', {
+			get: () => undefined,
+			set: () => {},
+			configurable: false
+		});
+		
+		// Intercept Function constructor to neutralize debugger statement detection
+		// Some detection scripts create functions with 'debugger' to measure pause time
+		const OriginalFunction = window.Function;
+		window.Function = function(...args) {
+			if (args.length > 0) {
+				const lastArg = args[args.length - 1];
+				if (typeof lastArg === 'string' && lastArg.includes('debugger')) {
+					args[args.length - 1] = lastArg.replace(/debugger/gi, '');
+				}
+			}
+			return OriginalFunction.apply(this, args);
+		};
+		window.Function.prototype = OriginalFunction.prototype;
+		Object.defineProperty(window.Function, 'name', { value: 'Function' });
+		`
+		_, err := page.AddScriptToEvaluateOnNewDocument(stealthScript).Do(ctx)
 		if err != nil {
 			return err
 		}
 		return nil
+	})
+}
+
+// disableDebuggerDetection disables debugger statement pausing via CDP
+// This prevents timing-based detection that measures how long 'debugger' statements take
+func disableDebuggerDetection() chromedp.ActionFunc {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		// Enable the debugger domain first
+		_, err := debugger.Enable().Do(ctx)
+		if err != nil {
+			return err
+		}
+		// Skip all pauses - this makes 'debugger' statements execute instantly
+		return debugger.SetSkipAllPauses(true).Do(ctx)
 	})
 }
 
@@ -224,22 +299,22 @@ func removeHeadlessUserAgent() chromedp.ActionFunc {
 		if err := network.Enable().Do(ctx); err != nil {
 			return err
 		}
-		resp, err := runtime.Evaluate(`navigator.userAgent`).WithReturnByValue(true).Do(ctx)
+		resp, _, err := runtime.Evaluate(`navigator.userAgent`).WithReturnByValue(true).Do(ctx)
 		if err != nil {
 			return err
 		}
-		if resp.Result == nil {
+		if resp == nil {
 			return nil
 		}
 		var ua string
-		if err := json.Unmarshal(resp.Result.Value, &ua); err != nil {
+		if err := json.Unmarshal(resp.Value, &ua); err != nil {
 			return err
 		}
 		cleanedUA := strings.ReplaceAll(ua, "Headless", "")
 		if cleanedUA == ua {
 			return nil
 		}
-		return network.SetUserAgentOverride(cleanedUA).Do(ctx)
+		return emulation.SetUserAgentOverride(cleanedUA).Do(ctx)
 	})
 }
 
